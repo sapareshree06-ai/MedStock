@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ryan Medicals — Inventory</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Ryan Medicals</h1>
+    <span>Core Inventory — V1</span>
+  </header>
+
+  <main>
+    <section class="cards">
+      <div class="card"><small>Medicines</small><strong id="medicineCount">-</strong></div>
+      <div class="card"><small>Batches</small><strong id="batchCount">-</strong></div>
+      <div class="card"><small>Total Units</small><strong id="unitCount">-</strong></div>
+      <div class="card"><small>Inventory Value</small><strong id="inventoryValue">-</strong></div>
+      <div class="card"><small>Expiry Risk</small><strong id="expiryValue">-</strong></div>
+    </section>
+
+    <section>
+      <h2>Inventory / Batches</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Medicine ID</th>
+            <th>Batch</th>
+            <th>Expiry</th>
+            <th>Quantity</th>
+            <th>MRP</th>
+          </tr>
+        </thead>
+        <tbody id="batchTable"></tbody>
+      </table>
+    </section>
+
+    <section class="two">
+      <div>
+        <h2>Low Stock</h2>
+        <ul id="lowStock"></ul>
+      </div>
+      <div>
+        <h2>Near Expiry</h2>
+        <ul id="nearExpiry"></ul>
+      </div>
+    </section>
+
+    <section>
+      <h2>Test FEFO Stock Out</h2>
+      <p class="hint">Enter a medicine ID and quantity. The backend will automatically use the earliest-expiring usable batches first.</p>
+      <form id="stockOutForm">
+        <input id="medicineId" type="number" placeholder="Medicine ID" required>
+        <input id="quantity" type="number" min="1" placeholder="Quantity" required>
+        <button>Issue Stock</button>
+      </form>
+      <pre id="result"></pre>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
