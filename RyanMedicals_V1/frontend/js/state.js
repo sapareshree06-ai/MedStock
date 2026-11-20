@@ -8,6 +8,8 @@ export const state = {
   summary: null,
   low: [],
   expiry: [],
+  reorderRecs: [],
+  reorderSummary: null,
 };
 
 // Lookup helpers that depend on state

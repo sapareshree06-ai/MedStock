@@ -530,6 +530,8 @@ tbody tr:last-child td { border-bottom: 0; }
 .status-warn    { background: var(--amber-bg);   color: var(--amber); }
 .status-danger  { background: var(--red-bg);     color: var(--red); }
 .status-neutral { background: var(--neutral-bg); color: var(--muted); }
+.status-info    { background: #dbeafe;           color: #1e40af; }
+[data-theme="dark"] .status-info { background: #1e3a5f; color: #93c5fd; }
 
 /* ---------- Alerts ---------- */
 .alert-list { display: grid; }
@@ -751,4 +753,52 @@ tbody tr:last-child td { border-bottom: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+/* ---------- Reorder Advice page ---------- */
+.reorder-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 12px 20px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.reorder-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.reorder-filters select {
+  padding: 6px 10px;
+  border: 1px solid var(--field-border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.reorder-filters select:focus {
+  outline: none;
+  box-shadow: var(--ring);
+  border-color: var(--accent);
+}
+
+.reorder-row td { vertical-align: top; }
+.reorder-critical td:first-child { border-left: 3px solid var(--red); }
+.reorder-reorder_now td:first-child { border-left: 3px solid var(--amber); }
+
+/* IQ nav tag */
+.nav-tag-iq {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-size: 9px;
+  letter-spacing: .5px;
+}
+
+@media (max-width: 600px) {
+  .reorder-filters { flex-direction: column; }
 }

@@ -12,6 +12,8 @@ export async function loadData() {
     request("/api/stock/movements"),
     request("/api/alerts/low-stock"),
     request(`/api/alerts/near-expiry?days=${NEAR_EXPIRY_DAYS}`),
+    request("/api/reorder/recommendations"),
+    request("/api/reorder/summary"),
   ]);
 
   [
@@ -22,5 +24,7 @@ export async function loadData() {
     state.movements,
     state.low,
     state.expiry,
+    state.reorderRecs,
+    state.reorderSummary,
   ] = results;
 }

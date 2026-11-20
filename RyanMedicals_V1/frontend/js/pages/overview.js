@@ -7,6 +7,41 @@ import { expiryStatus, movementBadge } from "../components/status.js";
 
 export const title = "Overview";
 
+
+function reorderWidget() {
+  const rs = state.reorderSummary;
+
+  if (!rs || rs.needs_action === 0) return "";
+
+  return `
+    <section class="panel reorder-widget">
+      <div class="panel-head">
+        <div>
+          <h2>Reorder recommendations</h2>
+          <p>
+            ${rs.needs_action} medicine${rs.needs_action !== 1 ? "s" : ""}
+            require attention · Estimated cost ${money(rs.total_estimated_cost)}
+          </p>
+        </div>
+
+        <button class="text-link" data-go="reorder">
+          View recommendations →
+        </button>
+      </div>
+
+      <div class="panel-body" style="padding: 16px 20px;">
+        <div class="metric-grid" style="margin: 0;">
+          ${metric("Critical", rs.critical, "!", "Stockout imminent")}
+          ${metric("Reorder now", rs.reorder_now, "↗", "Within safety buffer")}
+          ${metric("Adequate", rs.adequate, "✓", "Sufficient runway")}
+          ${metric("Total medicines", rs.total_medicines, "✚", "Analysed")}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+
 export function batchRows(batches) {
   return batches
     .map(
@@ -83,6 +118,7 @@ export function render() {
     ${metric("Units in inventory", s.total_units.toLocaleString("en-IN"), "▤", "Across all batches")}
     ${metric("Inventory purchase value", money(s.inventory_value), "₹", "Based on purchase price")}
   </div>
+  ${reorderWidget()}
   <div class="content-grid">
     <section class="panel"><div class="panel-head"><div><h2>Inventory at a glance</h2><p>Latest batches ordered by expiry date</p></div><button class="text-link" data-go="inventory">View inventory →</button></div>
       ${table(
