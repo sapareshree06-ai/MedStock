@@ -1,4 +1,3 @@
-
 from datetime import date, timedelta
 
 import pytest
@@ -8,9 +7,10 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base
-from app.models import Medicine, Batch, StockMovement
-from app.routers.stock import fefo_preview, stock_out
-from app.schemas import StockOut
+from app.models import Batch, Medicine, StockMovement
+from app.routers.medicines import create_batch as create_batch_endpoint
+from app.routers.stock import fefo_preview, stock_in, stock_out
+from app.schemas import BatchCreate, StockIn, StockOut
 
 
 @pytest.fixture
@@ -69,7 +69,7 @@ def test_fefo_uses_earliest_expiry_first(db):
     )
     db.commit()
 
-    result = stock_out(
+    stock_out(
         StockOut(medicine_id=medicine.id, quantity=60),
         db,
     )
@@ -104,7 +104,10 @@ def test_fefo_preview_returns_plan_without_changing_stock(db):
     result = fefo_preview(StockOut(medicine_id=medicine.id, quantity=5), db)
 
     assert result["can_fulfill"] is True
-    assert [(item["batch_id"], item["quantity_used"]) for item in result["allocations"]] == [(first.id, 3), (second.id, 2)]
+    assert [(item["batch_id"], item["quantity_used"]) for item in result["allocations"]] == [
+        (first.id, 3),
+        (second.id, 2),
+    ]
     db.refresh(first)
     db.refresh(second)
     assert (first.quantity, second.quantity) == (3, 8)
@@ -143,9 +146,44 @@ def test_insufficient_stock_changes_nothing(db):
     assert movements == []
 
 
-def test_fefo_skips_expired_batches(db):
+def test_stock_in_updates_quantity_and_records_movement(db):
     medicine = Medicine(
-        name="Expired Batch Test",
+        name="Stock In Audit Medicine",
+        reorder_level=5,
+    )
+    db.add(medicine)
+    db.flush()
+
+    batch = create_batch(
+        db,
+        medicine.id,
+        "STOCK-IN-01",
+        date.today() + timedelta(days=90),
+        15,
+    )
+    db.commit()
+
+    stock_in(
+        StockIn(batch_id=batch.id, quantity=25, notes="Supplier restock"),
+        db,
+    )
+
+    db.refresh(batch)
+    assert batch.quantity == 40
+
+    movements = db.scalars(
+        select(StockMovement).order_by(StockMovement.id)
+    ).all()
+    assert len(movements) == 1
+    assert movements[0].batch_id == batch.id
+    assert movements[0].movement_type == "IN"
+    assert movements[0].quantity == 25
+    assert movements[0].notes == "Supplier restock"
+
+
+def test_fefo_skips_expired_batches_and_records_multi_batch_movements(db):
+    medicine = Medicine(
+        name="Multi Batch FEFO Medicine",
         reorder_level=0,
     )
     db.add(medicine)
@@ -154,25 +192,46 @@ def test_fefo_skips_expired_batches(db):
     today = date.today()
 
     expired = create_batch(
-        db, medicine.id, "EXPIRED-001",
-        today - timedelta(days=10), 100
+        db, medicine.id, "BATCH-EXPIRED", today - timedelta(days=1), 50
     )
-    valid = create_batch(
-        db, medicine.id, "VALID-001",
-        today + timedelta(days=30), 20
+    first_valid = create_batch(
+        db, medicine.id, "BATCH-EXP-15D", today + timedelta(days=15), 20
+    )
+    second_valid = create_batch(
+        db, medicine.id, "BATCH-EXP-45D", today + timedelta(days=45), 35
+    )
+    third_valid = create_batch(
+        db, medicine.id, "BATCH-EXP-90D", today + timedelta(days=90), 50
     )
     db.commit()
 
     stock_out(
-        StockOut(medicine_id=medicine.id, quantity=10),
+        StockOut(medicine_id=medicine.id, quantity=70, notes="Prescription batch"),
         db,
     )
 
     db.refresh(expired)
-    db.refresh(valid)
+    db.refresh(first_valid)
+    db.refresh(second_valid)
+    db.refresh(third_valid)
 
-    assert expired.quantity == 100
-    assert valid.quantity == 10
+    # Expired batch must never be issued; valid batches drain in expiry order.
+    assert expired.quantity == 50
+    assert first_valid.quantity == 0
+    assert second_valid.quantity == 0
+    assert third_valid.quantity == 35
+
+    movements = db.scalars(
+        select(StockMovement)
+        .where(StockMovement.movement_type == "OUT")
+        .order_by(StockMovement.id)
+    ).all()
+
+    assert [(m.batch_id, m.quantity) for m in movements] == [
+        (first_valid.id, 20),
+        (second_valid.id, 35),
+        (third_valid.id, 15),
+    ]
 
 
 def test_fefo_rejects_when_only_expired_stock_exists(db):
@@ -286,3 +345,65 @@ def test_fefo_uses_batch_id_when_expiry_dates_are_equal(db):
         (first.id, 3),
         (second.id, 1),
     ]
+
+
+def test_batch_creation_records_initial_in_movement_and_rejects_duplicate_409(db):
+    medicine = Medicine(
+        name="Batch Audit Medicine",
+        reorder_level=10,
+    )
+    db.add(medicine)
+    db.commit()
+    db.refresh(medicine)
+
+    expiry = date.today() + timedelta(days=180)
+    created = create_batch_endpoint(
+        BatchCreate(
+            medicine_id=medicine.id,
+            batch_number="INIT-BATCH-01",
+            expiry_date=expiry,
+            quantity=30,
+            purchase_price=12.0,
+            mrp=18.0,
+        ),
+        db,
+    )
+
+    assert created.quantity == 30
+
+    movements = db.scalars(
+        select(StockMovement).where(StockMovement.batch_id == created.id)
+    ).all()
+    assert len(movements) == 1
+    assert movements[0].movement_type == "IN"
+    assert movements[0].quantity == 30
+
+    # Duplicate (medicine_id, batch_number) must return HTTP 409 without extra records.
+    with pytest.raises(HTTPException) as error:
+        create_batch_endpoint(
+            BatchCreate(
+                medicine_id=medicine.id,
+                batch_number="INIT-BATCH-01",
+                expiry_date=expiry,
+                quantity=20,
+                purchase_price=12.0,
+                mrp=18.0,
+            ),
+            db,
+        )
+
+    assert error.value.status_code == 409
+
+    batches = db.scalars(
+        select(Batch).where(
+            Batch.medicine_id == medicine.id,
+            Batch.batch_number == "INIT-BATCH-01",
+        )
+    ).all()
+    assert len(batches) == 1
+    assert batches[0].quantity == 30
+
+    movements_after = db.scalars(
+        select(StockMovement).where(StockMovement.batch_id == created.id)
+    ).all()
+    assert len(movements_after) == 1
