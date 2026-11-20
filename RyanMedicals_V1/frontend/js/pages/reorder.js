@@ -28,8 +28,8 @@ function daysLabel(days) {
 
 // ── Summary metrics at the top ───────────────────────────────────
 function summaryMetrics() {
-  const s = state.reorderSummary;
-  if (!s) return "";
+  const rs = state.reorderSummary;
+  if (!rs) return "";
   return `<div class="metric-grid">
     ${metric("Critical", rs.critical, "!", "Stockout imminent")}
           ${metric("Reorder now", rs.reorder_now, "↗", "Within safety buffer")}
