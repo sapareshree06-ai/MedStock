@@ -30,6 +30,7 @@ class SupplierCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     phone: str | None = Field(default=None, max_length=30)
     email: str | None = Field(default=None, max_length=150)
+    lead_time_days: int = Field(default=3, ge=0, description="Supplier delivery lead time in days")
 
     @field_validator("name")
     @classmethod
