@@ -1,65 +1,218 @@
-<!doctype html>
+
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ryan Medicals — Inventory</title>
-  <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta name="theme-color" content="#173b32">
+    <meta name="description" content="Ryan Medicals Pharmacy Inventory Management System">
+
+    <title>Ryan Medicals — Inventory</title>
+
+    <!-- Apply saved theme before the page renders -->
+    <script>
+        (() => {
+            try {
+                const saved = localStorage.getItem("ryan-medicals-theme");
+                const preferred = window.matchMedia(
+                    "(prefers-color-scheme: dark)"
+                ).matches ? "dark" : "light";
+
+                document.documentElement.dataset.theme =
+                    saved === "dark" || saved === "light"
+                        ? saved
+                        : preferred;
+            } catch (error) {
+                document.documentElement.dataset.theme = "light";
+            }
+        })();
+    </script>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap"
+        rel="stylesheet"
+    >
+
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="css/style.css">
 </head>
+
 <body>
-  <header>
-    <h1>Ryan Medicals</h1>
-    <span>Core Inventory — V1</span>
-  </header>
 
-  <main>
-    <section class="cards">
-      <div class="card"><small>Medicines</small><strong id="medicineCount">-</strong></div>
-      <div class="card"><small>Batches</small><strong id="batchCount">-</strong></div>
-      <div class="card"><small>Total Units</small><strong id="unitCount">-</strong></div>
-      <div class="card"><small>Inventory Value</small><strong id="inventoryValue">-</strong></div>
-      <div class="card"><small>Expiry Risk</small><strong id="expiryValue">-</strong></div>
-    </section>
+    <div class="app-shell">
 
-    <section>
-      <h2>Inventory / Batches</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Medicine ID</th>
-            <th>Batch</th>
-            <th>Expiry</th>
-            <th>Quantity</th>
-            <th>MRP</th>
-          </tr>
-        </thead>
-        <tbody id="batchTable"></tbody>
-      </table>
-    </section>
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
 
-    <section class="two">
-      <div>
-        <h2>Low Stock</h2>
-        <ul id="lowStock"></ul>
-      </div>
-      <div>
-        <h2>Near Expiry</h2>
-        <ul id="nearExpiry"></ul>
-      </div>
-    </section>
+            <a class="brand" href="#" data-page="overview">
+                <span class="brand-mark">R<span>+</span></span>
 
-    <section>
-      <h2>Test FEFO Stock Out</h2>
-      <p class="hint">Enter a medicine ID and quantity. The backend will automatically use the earliest-expiring usable batches first.</p>
-      <form id="stockOutForm">
-        <input id="medicineId" type="number" placeholder="Medicine ID" required>
-        <input id="quantity" type="number" min="1" placeholder="Quantity" required>
-        <button>Issue Stock</button>
-      </form>
-      <pre id="result"></pre>
-    </section>
-  </main>
+                <span class="brand-copy">
+                    <strong>RYAN MEDICALS</strong>
+                    <small>PHARMACY MANAGEMENT</small>
+                </span>
+            </a>
 
-  <script src="app.js"></script>
+            <!-- Workspace navigation -->
+            <div class="nav-label">WORKSPACE</div>
+
+            <nav class="main-nav" aria-label="Main navigation">
+
+                <button class="nav-item active" data-page="overview">
+                    <span class="nav-icon">◫</span>
+                    Overview
+                </button>
+
+                <button class="nav-item" data-page="inventory">
+                    <span class="nav-icon">▤</span>
+                    Inventory
+                </button>
+
+                <button class="nav-item" data-page="medicines">
+                    <span class="nav-icon">✚</span>
+                    Medicines
+                </button>
+
+                <button class="nav-item" data-page="batches">
+                    <span class="nav-icon">▦</span>
+                    Batches
+                </button>
+
+            </nav>
+
+            <!-- Stock operations -->
+            <div class="nav-label nav-label-spaced">
+                STOCK OPERATIONS
+            </div>
+
+            <nav class="main-nav" aria-label="Stock operations">
+
+                <button class="nav-item" data-page="stock-in">
+                    <span class="nav-icon">↙</span>
+                    Receive stock
+                </button>
+
+                <button class="nav-item" data-page="stock-out">
+                    <span class="nav-icon">↗</span>
+                    Issue stock
+                    <span class="nav-tag">FEFO</span>
+                </button>
+
+                <button class="nav-item" data-page="movements">
+                    <span class="nav-icon">↔</span>
+                    Movements
+                </button>
+
+                <button class="nav-item" data-page="suppliers">
+                    <span class="nav-icon">♧</span>
+                    Suppliers
+                </button>
+
+            </nav>
+
+            <!-- Sidebar footer -->
+            <div class="sidebar-bottom">
+
+                <div class="sidebar-note">
+                    <span class="pulse"></span>
+
+                    <div>
+                        <strong>Inventory system</strong>
+                        <small>Connected workspace</small>
+                    </div>
+                </div>
+
+                <div class="sidebar-version">
+                    RYAN MEDICALS
+                    <span>V1.0</span>
+                </div>
+
+            </div>
+
+        </aside>
+
+        <!-- Main content -->
+        <main class="main-area">
+
+            <!-- Top navigation bar -->
+            <header class="topbar">
+
+                <button
+                    class="mobile-menu"
+                    id="mobileMenu"
+                    type="button"
+                    aria-label="Toggle navigation"
+                    aria-controls="sidebar"
+                    aria-expanded="false"
+                >
+                    ☰
+                </button>
+
+                <div class="breadcrumb">
+                    <span>Workspace</span>
+                    <b>/</b>
+                    <strong id="pageCrumb">Overview</strong>
+                </div>
+
+                <div class="topbar-right">
+
+                    <span class="today" id="todayLabel"></span>
+
+                    <!-- Theme toggle -->
+                    <button
+                        class="theme-toggle"
+                        id="themeToggle"
+                        type="button"
+                        aria-label="Switch to dark mode"
+                        aria-pressed="false"
+                    >
+                        <span
+                            class="theme-toggle-icon"
+                            aria-hidden="true"
+                        >☾</span>
+
+                        <span class="theme-toggle-label">
+                            Dark mode
+                        </span>
+                    </button>
+
+                    <span class="avatar">RM</span>
+
+                </div>
+
+            </header>
+
+            <!-- Dynamic page content -->
+            <section class="page-wrap">
+
+                <div
+                    id="toast"
+                    class="toast"
+                    role="status"
+                    aria-live="polite"
+                ></div>
+
+                <div id="pageContent"></div>
+
+                <!-- Footer -->
+                <footer class="footer">
+                    <span>Ryan Medicals Inventory</span>
+                    <span>Inventory, under control.</span>
+                </footer>
+
+            </section>
+
+        </main>
+
+    </div>
+
+    <!-- Application scripts -->
+    <script type="module" src="js/main.js"></script>
+
 </body>
 </html>

@@ -13,6 +13,55 @@ from ..schemas import StockIn, StockOut, MovementOut
 router = APIRouter(prefix="/api/stock", tags=["Stock"])
 
 
+def _fefo_allocations(data: StockOut, db: Session):
+    """Return the read-only FEFO plan shared by preview and stock-out."""
+    medicine = db.get(Medicine, data.medicine_id)
+    if medicine is None:
+        raise HTTPException(status_code=404, detail="Medicine not found")
+
+    batches = db.scalars(
+        select(Batch)
+        .where(
+            Batch.medicine_id == data.medicine_id,
+            Batch.quantity > 0,
+            Batch.expiry_date >= date.today(),
+        )
+        .order_by(Batch.expiry_date.asc(), Batch.id.asc())
+    ).all()
+
+    remaining = data.quantity
+    allocations = []
+    for batch in batches:
+        if remaining == 0:
+            break
+        used = min(batch.quantity, remaining)
+        remaining -= used
+        allocations.append(
+            {
+                "batch_id": batch.id,
+                "batch_number": batch.batch_number,
+                "expiry_date": batch.expiry_date,
+                "quantity_used": used,
+            }
+        )
+
+    return medicine, batches, allocations, remaining
+
+
+@router.post("/fefo-preview")
+def fefo_preview(data: StockOut, db: Session = Depends(get_db)):
+    """Preview FEFO allocation without updating stock or movements."""
+    _, batches, allocations, remaining = _fefo_allocations(data, db)
+    available = sum(batch.quantity for batch in batches)
+    return {
+        "medicine_id": data.medicine_id,
+        "requested": data.quantity,
+        "available": available,
+        "can_fulfill": remaining == 0,
+        "allocations": allocations,
+    }
+
+
 @router.post("/in")
 def stock_in(data: StockIn, db: Session = Depends(get_db)):
     try:
@@ -63,13 +112,11 @@ def stock_in(data: StockIn, db: Session = Depends(get_db)):
 def stock_out(data: StockOut, db: Session = Depends(get_db)):
     try:
         medicine = db.get(Medicine, data.medicine_id)
-
         if medicine is None:
             raise HTTPException(status_code=404, detail="Medicine not found")
 
         today = date.today()
-
-        # FEFO: earliest expiry first; exclude expired and empty batches.
+        # Lock the same eligible batches used by the read-only preview logic.
         batches = db.scalars(
             select(Batch)
             .where(
