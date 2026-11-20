@@ -31,10 +31,10 @@ function summaryMetrics() {
   const s = state.reorderSummary;
   if (!s) return "";
   return `<div class="metric-grid">
-    ${metric("Critical", rs.critical, "!", "Stockout imminent")}
-          ${metric("Reorder now", rs.reorder_now, "↗", "Within safety buffer")}
-          ${metric("Adequate", rs.adequate, "✓", "Sufficient runway")}
-          ${metric("Total medicines", rs.total_medicines, "✚", "Analysed")}
+    ${metric("Critical", s.critical, "!", "Stockout imminent")}
+          ${metric("Reorder now", s.reorder_now, "↗", "Within safety buffer")}
+          ${metric("Adequate", s.adequate, "✓", "Sufficient runway")}
+          ${metric("Total medicines", s.total_medicines, "✚", "Analysed")}
   </div>`;
 }
 
