@@ -50,17 +50,13 @@ pip install -r requirements.txt
 python -m app.seed
 uvicorn app.main:app --reload
 
-API: http://127.0.0.1:8000
+App: http://127.0.0.1:8000
+API health check: http://127.0.0.1:8000/api/health
 Swagger docs: http://127.0.0.1:8000/docs
 
-### 2. Frontend
-Open frontend/index.html in a browser.
-
-If your browser blocks API requests from a local file, serve the folder:
-
-python -m http.server 5500 --directory frontend
-
-Then open http://127.0.0.1:5500
+The backend serves the frontend, so no separate frontend server is required.
+For frontend-only development, `python -m http.server 5500 --directory frontend`
+also works; it will connect to the API on port 8000.
 
 ## PostgreSQL
 
