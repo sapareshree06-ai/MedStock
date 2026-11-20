@@ -9,6 +9,7 @@ import * as stockIn from "./stockIn.js";
 import * as stockOut from "./stockOut.js";
 import * as movements from "./movements.js";
 import * as suppliers from "./suppliers.js";
+import * as reorder from "./reorder.js";
 
 export const pages = {
   overview,
@@ -19,4 +20,5 @@ export const pages = {
   "stock-out": stockOut,
   movements,
   suppliers,
+  reorder,
 };

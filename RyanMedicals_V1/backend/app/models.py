@@ -40,6 +40,7 @@ class Supplier(Base):
     name: Mapped[str] = mapped_column(String(150))
     phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     email: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    lead_time_days: Mapped[int] = mapped_column(Integer, default=3)
 
     batches = relationship("Batch", back_populates="supplier")
 
