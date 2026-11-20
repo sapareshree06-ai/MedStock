@@ -1,4 +1,3 @@
-
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,9 +12,20 @@ from ..schemas import StockIn, StockOut, MovementOut
 router = APIRouter(prefix="/api/stock", tags=["Stock"])
 
 
+def _begin_sqlite_immediate_write(db: Session) -> None:
+    """Serialize write transactions early in SQLite before reading stock."""
+    bind = db.get_bind()
+    if bind is not None and bind.dialect.name == "sqlite":
+        raw_conn = db.connection().connection
+        if not raw_conn.in_transaction:
+            raw_conn.execute("BEGIN IMMEDIATE")
+
+
 @router.post("/in")
 def stock_in(data: StockIn, db: Session = Depends(get_db)):
     try:
+        _begin_sqlite_immediate_write(db)
+
         batch = db.scalar(
             select(Batch)
             .where(Batch.id == data.batch_id)
@@ -62,6 +72,8 @@ def stock_in(data: StockIn, db: Session = Depends(get_db)):
 @router.post("/out")
 def stock_out(data: StockOut, db: Session = Depends(get_db)):
     try:
+        _begin_sqlite_immediate_write(db)
+
         medicine = db.get(Medicine, data.medicine_id)
 
         if medicine is None:
