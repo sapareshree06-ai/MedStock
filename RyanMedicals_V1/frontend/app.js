@@ -1,416 +1,215 @@
 const API = "http://127.0.0.1:8000";
-
-const state = {
-  medicines: [],
-  batches: [],
-  lowStock: [],
-  nearExpiry: [],
-  movements: [],
-  activeView: "overview",
-  batchFilter: "",
-};
+const state = { medicines: [], batches: [], lowStock: [], nearExpiry: [], movements: [], batchFilter: "" };
 
 const VIEW_META = {
-  overview: { title: "Store Overview", eyebrow: "Daily Pharmacy Snapshot" },
-  counter: { title: "Receive & Dispense", eyebrow: "Stock Receipt & FEFO Counter" },
-  inventory: { title: "Batches & Alerts", eyebrow: "Stock Lots, Expiry & Reorder Watch" },
-  movements: { title: "Stock Ledger", eyebrow: "Immutable IN / OUT Audit Trail" },
+  overview: "Store overview",
+  counter: "Receive and dispense",
+  inventory: "Shelves and alerts",
+  movements: "Stock ledger",
 };
 
-function formatDateLabel() {
-  return new Date().toLocaleDateString("en-IN", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+const $ = (id) => document.getElementById(id);
+const rupee = (v) => `₹${Number(v ?? 0).toLocaleString("en-IN")}`;
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
 }
 
-function formatTimestamp(ts) {
+const fmtDate = () =>
+  new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+
+function fmtTime(ts) {
   if (!ts) return "—";
   const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return String(ts);
-  return d.toLocaleString("en-IN", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  return Number.isNaN(d.getTime()) ? String(ts) : d.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
 }
 
-function setApiStatus(statusClass, label) {
-  const badge = document.getElementById("apiStatus");
-  badge.classList.remove("is-idle", "is-online", "is-offline");
-  badge.classList.add(statusClass);
-  const textNode = badge.querySelector("span:last-child");
-  if (textNode) textNode.textContent = label;
+function setApiStatus(cls, label) {
+  const b = $("apiStatus");
+  b.classList.remove("is-idle", "is-online", "is-offline");
+  b.classList.add(cls);
+  b.querySelector("span").textContent = label;
 }
 
-function showToast(kind, message) {
-  const bar = document.getElementById("toastBar");
-  bar.className = `toast ${kind === "err" ? "toast-err" : "toast-ok"}`;
-  bar.textContent = message;
-  bar.classList.remove("hidden");
+let toastTimer;
+function showToast(kind, msg) {
+  const t = $("toastBar");
+  t.className = `toast ${kind === "err" ? "toast-err" : "toast-ok"}`;
+  t.textContent = msg;
+  clearTimeout(toastTimer);
+  if (kind !== "err") toastTimer = setTimeout(hideToast, 3500);
 }
+function hideToast() { $("toastBar").classList.add("hidden"); }
 
-function hideToast() {
-  const bar = document.getElementById("toastBar");
-  bar.classList.add("hidden");
-  bar.textContent = "";
-}
-
-function parseErrorText(status, rawText) {
+function parseErrorText(status, raw) {
   try {
-    const data = JSON.parse(rawText);
-    if (typeof data.detail === "string") return data.detail;
-    if (Array.isArray(data.detail)) {
-      return data.detail
-        .map((err) => {
-          const field = Array.isArray(err.loc) ? err.loc[err.loc.length - 1] : "";
-          return field ? `${field}: ${err.msg}` : err.msg;
-        })
-        .join(" • ");
-    }
-    return JSON.stringify(data, null, 2);
+    const d = JSON.parse(raw);
+    if (typeof d.detail === "string") return d.detail;
+    if (Array.isArray(d.detail))
+      return d.detail.map((e) => {
+        const f = Array.isArray(e.loc) ? e.loc[e.loc.length - 1] : "";
+        return f ? `${f}: ${e.msg}` : e.msg;
+      }).join(" • ");
+    return JSON.stringify(d, null, 2);
   } catch {
-    return rawText || `Request failed (${status})`;
+    return raw || `Request failed (${status})`;
   }
 }
 
 async function fetchJSON(path, options = {}) {
-  const response = await fetch(API + path, options);
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(parseErrorText(response.status, text));
-  }
+  const res = await fetch(API + path, options);
+  const text = await res.text();
+  if (!res.ok) throw new Error(parseErrorText(res.status, text));
   return text ? JSON.parse(text) : null;
 }
 
-function switchView(viewName) {
-  if (!VIEW_META[viewName]) return;
-  state.activeView = viewName;
+const postJSON = (path, body) =>
+  fetchJSON(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
-  document.querySelectorAll(".nav-item").forEach((btn) => {
-    btn.classList.toggle("is-active", btn.dataset.view === viewName);
-  });
-
-  document.querySelectorAll(".view-pane").forEach((pane) => {
-    pane.classList.toggle("is-active", pane.id === `view-${viewName}`);
-  });
-
-  document.getElementById("viewTitle").textContent = VIEW_META[viewName].title;
-  document.getElementById("todayLabel").textContent =
-    `${VIEW_META[viewName].eyebrow} • ${formatDateLabel()}`;
+function switchView(name) {
+  if (!VIEW_META[name]) return;
+  document.querySelectorAll(".nav-item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === name));
+  document.querySelectorAll(".view").forEach((v) => v.classList.toggle("is-active", v.id === `view-${name}`));
+  $("viewTitle").textContent = VIEW_META[name];
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function getMedicineName(medicineId) {
-  const med = state.medicines.find((m) => Number(m.id) === Number(medicineId));
-  return med ? `${med.name} (#${med.id})` : `Medicine #${medicineId}`;
+function medName(id) {
+  const m = state.medicines.find((x) => Number(x.id) === Number(id));
+  return m ? `${m.name} (#${m.id})` : `Medicine #${id}`;
 }
 
-function getBatchLabel(batchId) {
-  const batch = state.batches.find((b) => Number(b.id) === Number(batchId));
-  if (!batch) return `Batch #${batchId}`;
-  return `${batch.batch_number} (Batch #${batch.id}, Med #${batch.medicine_id})`;
+function batchLabel(id) {
+  const b = state.batches.find((x) => Number(x.id) === Number(id));
+  return b ? `${b.batch_number} (Batch #${b.id}, Med #${b.medicine_id})` : `Batch #${id}`;
 }
 
-function getExpiryStatus(expiryDateStr) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const exp = new Date(`${expiryDateStr}T00:00:00`);
-  if (Number.isNaN(exp.getTime())) {
-    return { label: expiryDateStr, cls: "expiry-ok" };
-  }
-
-  const diffDays = Math.round((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  if (diffDays < 0) {
-    return { label: `${expiryDateStr} • Expired`, cls: "expiry-expired" };
-  }
-  if (diffDays <= 90) {
-    return { label: `${expiryDateStr} • ${diffDays}d left`, cls: "expiry-soon" };
-  }
-  return { label: expiryDateStr, cls: "expiry-ok" };
+function expiryStatus(dateStr) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const exp = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(exp.getTime())) return { label: dateStr, cls: "" };
+  const d = Math.round((exp - today) / 864e5);
+  if (d < 0) return { label: `${dateStr} · Expired`, cls: "gone" };
+  if (d <= 90) return { label: `${dateStr} · ${d}d left`, cls: "soon" };
+  return { label: dateStr, cls: "" };
 }
 
-function renderPickerOptions() {
-  const medSelect = document.getElementById("medicineSelect");
-  const currentMedVal = medSelect.value;
-  medSelect.innerHTML = '<option value="">Select medicine (or enter ID below)</option>';
+/* A row: title + optional subtitle on the left, amount on the right */
+function row(title, sub, amount, amtCls = "") {
+  const li = el("li");
+  const left = el("div");
+  left.append(el("span", "", title));
+  if (sub) left.append(el("span", "sub", sub));
+  li.append(left, el("span", `amt ${amtCls}`, amount));
+  return li;
+}
 
-  for (const med of state.medicines) {
-    const opt = document.createElement("option");
-    opt.value = String(med.id);
-    opt.textContent = `${med.name} — ID #${med.id} (reorder ≤ ${med.reorder_level})`;
-    medSelect.appendChild(opt);
+function fillList(ids, items, emptyText, build) {
+  for (const id of ids) {
+    const ul = $(id);
+    ul.innerHTML = "";
+    if (!items.length) { ul.append(el("li", "empty", emptyText)); continue; }
+    items.forEach((it) => ul.append(build(it)));
   }
-  if (currentMedVal) medSelect.value = currentMedVal;
+}
 
-  const batchSelect = document.getElementById("batchSelect");
-  const currentBatchVal = batchSelect.value;
-  batchSelect.innerHTML = '<option value="">Select batch (or enter Batch ID below)</option>';
+function renderPickers() {
+  const ms = $("medicineSelect"), mv = ms.value;
+  ms.innerHTML = "";
+  ms.append(new Option("Choose a medicine", ""));
+  state.medicines.forEach((m) => ms.append(new Option(`${m.name} · #${m.id} · reorder at ${m.reorder_level}`, m.id)));
+  if (mv) ms.value = mv;
 
-  for (const batch of state.batches) {
-    const opt = document.createElement("option");
-    opt.value = String(batch.id);
-    opt.textContent = `${batch.batch_number} — Batch #${batch.id} • ${batch.quantity} units • exp ${batch.expiry_date}`;
-    batchSelect.appendChild(opt);
-  }
-  if (currentBatchVal) batchSelect.value = currentBatchVal;
+  const bs = $("batchSelect"), bv = bs.value;
+  bs.innerHTML = "";
+  bs.append(new Option("Choose a batch", ""));
+  state.batches.forEach((b) =>
+    bs.append(new Option(`${b.batch_number} · #${b.id} · ${b.quantity} units · exp ${b.expiry_date}`, b.id)));
+  if (bv) bs.value = bv;
 }
 
 function renderAlerts() {
-  const lowCount = state.lowStock.length;
-  const expiryCount = state.nearExpiry.length;
-  const totalAlerts = lowCount + expiryCount;
+  const low = state.lowStock, exp = state.nearExpiry;
+  $("alertNavCount").textContent = String(low.length + exp.length);
+  $("lowStockCountPill").textContent = String(low.length);
+  $("nearExpiryCountPill").textContent = String(exp.length);
 
-  document.getElementById("alertNavCount").textContent = String(totalAlerts);
-  document.getElementById("lowStockBadge").textContent = `${lowCount} ${lowCount === 1 ? "item" : "items"}`;
-  document.getElementById("nearExpiryBadge").textContent = `${expiryCount} ${expiryCount === 1 ? "batch" : "batches"}`;
-  document.getElementById("lowStockCountPill").textContent = String(lowCount);
-  document.getElementById("nearExpiryCountPill").textContent = String(expiryCount);
+  fillList(["overviewLowStock", "lowStock"], low, "Everything is above its reorder level.", (i) =>
+    row(`${i.medicine} (#${i.medicine_id})`, `Reorder at ${i.reorder_level} units`, `${i.quantity} left`, "warn"));
 
-  const overviewLow = document.getElementById("overviewLowStock");
-  const fullLow = document.getElementById("lowStock");
-  overviewLow.innerHTML = "";
-  fullLow.innerHTML = "";
-
-  if (!lowCount) {
-    const emptyA = document.createElement("li");
-    emptyA.className = "empty-note";
-    emptyA.textContent = "All medicines are above reorder level.";
-    overviewLow.appendChild(emptyA);
-
-    const emptyB = document.createElement("li");
-    emptyB.className = "empty-note";
-    emptyB.textContent = "No low-stock medicines right now.";
-    fullLow.appendChild(emptyB);
-  } else {
-    for (const item of state.lowStock) {
-      const text = `${item.medicine} (#${item.medicine_id})`;
-      const right = `${item.quantity} / ≤ ${item.reorder_level} units`;
-
-      for (const target of [overviewLow, fullLow]) {
-        const li = document.createElement("li");
-        const leftSpan = document.createElement("span");
-        leftSpan.textContent = text;
-        const rightSpan = document.createElement("span");
-        rightSpan.className = "mono";
-        rightSpan.textContent = right;
-        li.appendChild(leftSpan);
-        li.appendChild(rightSpan);
-        target.appendChild(li);
-      }
-    }
-  }
-
-  const overviewExpiry = document.getElementById("overviewNearExpiry");
-  const fullExpiry = document.getElementById("nearExpiry");
-  overviewExpiry.innerHTML = "";
-  fullExpiry.innerHTML = "";
-
-  if (!expiryCount) {
-    const emptyA = document.createElement("li");
-    emptyA.className = "empty-note";
-    emptyA.textContent = "No batches expiring in the next 90 days.";
-    overviewExpiry.appendChild(emptyA);
-
-    const emptyB = document.createElement("li");
-    emptyB.className = "empty-note";
-    emptyB.textContent = "No near-expiry batches within 90 days.";
-    fullExpiry.appendChild(emptyB);
-  } else {
-    for (const item of state.nearExpiry) {
-      const leftText = `${item.medicine} • ${item.batch_number}`;
-      const riskPart = item.value_at_risk !== undefined ? ` • ₹${item.value_at_risk} risk` : "";
-      const rightText = `${item.quantity}u • exp ${item.expiry_date}${riskPart}`;
-
-      for (const target of [overviewExpiry, fullExpiry]) {
-        const li = document.createElement("li");
-        const leftSpan = document.createElement("span");
-        leftSpan.textContent = leftText;
-        const rightSpan = document.createElement("span");
-        rightSpan.className = "mono";
-        rightSpan.textContent = rightText;
-        li.appendChild(leftSpan);
-        li.appendChild(rightSpan);
-        target.appendChild(li);
-      }
-    }
-  }
+  fillList(["overviewNearExpiry", "nearExpiry"], exp, "Nothing expires in the next 90 days.", (i) =>
+    row(`${i.medicine} · ${i.batch_number}`,
+        `${i.quantity} units · expires ${i.expiry_date}`,
+        i.value_at_risk !== undefined ? `${rupee(i.value_at_risk)} at risk` : "", "bad"));
 }
 
-function renderRecentActivity() {
-  const stream = document.getElementById("recentActivityList");
-  stream.innerHTML = "";
-
-  const recent = state.movements.slice(0, 6);
-  if (!recent.length) {
-    const li = document.createElement("li");
-    li.className = "empty-note";
-    li.textContent = "No stock movements recorded yet.";
-    stream.appendChild(li);
-    return;
-  }
-
-  for (const m of recent) {
-    const li = document.createElement("li");
-
-    const main = document.createElement("div");
-    main.className = "activity-main";
-
-    const typeUpper = String(m.movement_type || "").toUpperCase();
-    const badge = document.createElement("span");
-    badge.className = `move-badge ${typeUpper === "IN" ? "move-in" : "move-out"}`;
-    badge.textContent = typeUpper || "LOG";
-
-    const summary = document.createElement("span");
-    const sign = typeUpper === "IN" ? "+" : "-";
-    summary.textContent = `${sign}${m.quantity} units on ${getBatchLabel(m.batch_id)}`;
-
-    main.appendChild(badge);
-    main.appendChild(summary);
-
-    if (m.notes) {
-      const note = document.createElement("span");
-      note.className = "activity-note";
-      note.textContent = m.notes;
-      note.title = m.notes;
-      main.appendChild(note);
-    }
-
-    const time = document.createElement("span");
-    time.className = "activity-time";
-    time.textContent = formatTimestamp(m.timestamp);
-
-    li.appendChild(main);
-    li.appendChild(time);
-    stream.appendChild(li);
-  }
+function moveBadge(type) {
+  const t = String(type || "").toUpperCase();
+  return el("span", `tag ${t === "IN" ? "in" : "out"}`, t === "IN" ? "In" : t === "OUT" ? "Out" : "Log");
 }
 
-function renderBatchTable() {
-  const tbody = document.getElementById("batchTable");
-  tbody.innerHTML = "";
+function renderActivity() {
+  fillList(["recentActivityList"], state.movements.slice(0, 6), "No stock movements yet.", (m) => {
+    const isIn = String(m.movement_type).toUpperCase() === "IN";
+    const li = el("li");
+    const left = el("div");
+    const top = el("span");
+    top.append(moveBadge(m.movement_type), `${isIn ? "+" : "−"}${m.quantity} units`);
+    left.append(top, el("span", "sub", `${batchLabel(m.batch_id)}${m.notes ? " · " + m.notes : ""}`));
+    li.append(left, el("span", "amt", fmtTime(m.timestamp)));
+    return li;
+  });
+}
 
+function emptyRow(tbody, cols, text) {
+  const tr = el("tr"), td = el("td", "empty", text);
+  td.colSpan = cols;
+  tr.append(td);
+  tbody.append(tr);
+}
+
+function renderBatches() {
+  const tb = $("batchTable");
+  tb.innerHTML = "";
   const q = state.batchFilter.trim().toLowerCase();
-  const filtered = q
-    ? state.batches.filter((b) => {
-        const medName = getMedicineName(b.medicine_id).toLowerCase();
-        return (
-          String(b.batch_number).toLowerCase().includes(q) ||
-          String(b.id).includes(q) ||
-          String(b.medicine_id).includes(q) ||
-          medName.includes(q)
-        );
-      })
+  const list = q
+    ? state.batches.filter((b) =>
+        [b.batch_number, b.id, b.medicine_id, medName(b.medicine_id)].some((v) => String(v).toLowerCase().includes(q)))
     : state.batches;
+  if (!list.length) return emptyRow(tb, 5, q ? "No batches match your search." : "No batches yet.");
 
-  if (!filtered.length) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 5;
-    td.className = "empty-note";
-    td.textContent = q ? "No matching batches for your filter." : "No batches available.";
-    tr.appendChild(td);
-    tbody.appendChild(tr);
-    return;
-  }
-
-  for (const b of filtered) {
-    const tr = document.createElement("tr");
-
-    const batchTd = document.createElement("td");
-    batchTd.className = "mono";
-    batchTd.textContent = `${b.batch_number} (#${b.id})`;
-
-    const medTd = document.createElement("td");
-    medTd.textContent = getMedicineName(b.medicine_id);
-
-    const expTd = document.createElement("td");
-    const expInfo = getExpiryStatus(b.expiry_date);
-    const expSpan = document.createElement("span");
-    expSpan.className = `expiry-pill ${expInfo.cls}`;
-    expSpan.textContent = expInfo.label;
-    expTd.appendChild(expSpan);
-
-    const qtyTd = document.createElement("td");
-    qtyTd.className = "num mono";
-    qtyTd.textContent = String(b.quantity);
-
-    const mrpTd = document.createElement("td");
-    mrpTd.className = "num mono";
-    mrpTd.textContent = `₹${b.mrp}`;
-
-    tr.appendChild(batchTd);
-    tr.appendChild(medTd);
-    tr.appendChild(expTd);
-    tr.appendChild(qtyTd);
-    tr.appendChild(mrpTd);
-    tbody.appendChild(tr);
+  for (const b of list) {
+    const tr = el("tr");
+    const e = expiryStatus(b.expiry_date);
+    const exp = el("td"); exp.append(el("span", `exp ${e.cls}`, e.label));
+    tr.append(el("td", "", `${b.batch_number} (#${b.id})`), el("td", "", medName(b.medicine_id)), exp,
+      el("td", "r", String(b.quantity)), el("td", "r", rupee(b.mrp)));
+    tb.append(tr);
   }
 }
 
-function renderMovementTable() {
-  const tbody = document.getElementById("movementTable");
-  tbody.innerHTML = "";
-
-  if (!state.movements.length) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 5;
-    td.className = "empty-note";
-    td.textContent = "No stock movements recorded yet.";
-    tr.appendChild(td);
-    tbody.appendChild(tr);
-    return;
-  }
-
+function renderMovements() {
+  const tb = $("movementTable");
+  tb.innerHTML = "";
+  if (!state.movements.length) return emptyRow(tb, 5, "No stock movements yet.");
   for (const m of state.movements) {
-    const tr = document.createElement("tr");
-
-    const whenTd = document.createElement("td");
-    whenTd.textContent = formatTimestamp(m.timestamp);
-
-    const typeTd = document.createElement("td");
-    const typeUpper = String(m.movement_type || "").toUpperCase();
-    const badge = document.createElement("span");
-    badge.className = `move-badge ${typeUpper === "IN" ? "move-in" : "move-out"}`;
-    badge.textContent = typeUpper || "LOG";
-    typeTd.appendChild(badge);
-
-    const batchTd = document.createElement("td");
-    batchTd.className = "mono";
-    batchTd.textContent = getBatchLabel(m.batch_id);
-
-    const qtyTd = document.createElement("td");
-    qtyTd.className = "num mono";
-    qtyTd.textContent = String(m.quantity);
-
-    const noteTd = document.createElement("td");
-    noteTd.textContent = m.notes || "—";
-
-    tr.appendChild(whenTd);
-    tr.appendChild(typeTd);
-    tr.appendChild(batchTd);
-    tr.appendChild(qtyTd);
-    tr.appendChild(noteTd);
-    tbody.appendChild(tr);
+    const tr = el("tr");
+    const type = el("td"); type.append(moveBadge(m.movement_type));
+    tr.append(el("td", "", fmtTime(m.timestamp)), type, el("td", "", batchLabel(m.batch_id)),
+      el("td", "r", String(m.quantity)), el("td", "", m.notes || "—"));
+    tb.append(tr);
   }
 }
 
-function renderReceipt(headline, chips, rawPayload) {
-  document.getElementById("receiptHeadline").textContent = headline;
-  const container = document.getElementById("receiptBreakdown");
-  container.innerHTML = "";
-
-  for (const label of chips) {
-    const chip = document.createElement("span");
-    chip.className = "receipt-chip";
-    chip.textContent = label;
-    container.appendChild(chip);
-  }
-
-  document.getElementById("result").textContent =
-    typeof rawPayload === "string" ? rawPayload : JSON.stringify(rawPayload, null, 2);
+function renderReceipt(headline, chips, raw) {
+  $("receiptHeadline").textContent = headline;
+  const box = $("receiptBreakdown");
+  box.innerHTML = "";
+  chips.forEach((c) => box.append(el("span", "", c)));
+  $("result").textContent = typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
 }
 
 async function syncWorkspace() {
@@ -423,159 +222,93 @@ async function syncWorkspace() {
       fetchJSON("/api/alerts/near-expiry"),
       fetchJSON("/api/stock/movements"),
     ]);
+    Object.assign(state, {
+      medicines: medicines || [], batches: batches || [], lowStock: lowStock || [],
+      nearExpiry: nearExpiry || [], movements: movements || [],
+    });
 
-    state.medicines = medicines || [];
-    state.batches = batches || [];
-    state.lowStock = lowStock || [];
-    state.nearExpiry = nearExpiry || [];
-    state.movements = movements || [];
+    $("medicineCount").textContent = String(summary.medicine_count);
+    $("batchCount").textContent = String(summary.batch_count);
+    $("unitCount").textContent = Number(summary.total_units).toLocaleString("en-IN");
+    $("inventoryValue").textContent = rupee(summary.inventory_value);
+    $("expiryValue").textContent = rupee(summary.near_expiry_value);
 
-    document.getElementById("medicineCount").textContent = String(summary.medicine_count);
-    document.getElementById("batchCount").textContent = String(summary.batch_count);
-    document.getElementById("unitCount").textContent = String(summary.total_units);
-    document.getElementById("inventoryValue").textContent = `₹${summary.inventory_value}`;
-    document.getElementById("expiryValue").textContent = `₹${summary.near_expiry_value}`;
-
-    renderPickerOptions();
-    renderAlerts();
-    renderRecentActivity();
-    renderBatchTable();
-    renderMovementTable();
-
-    setApiStatus("is-online", "Backend Connected");
+    renderPickers(); renderAlerts(); renderActivity(); renderBatches(); renderMovements();
+    setApiStatus("is-online", "Connected");
     hideToast();
   } catch (err) {
-    setApiStatus("is-offline", "Backend Offline");
-    showToast("err", `Could not sync with FastAPI (${API}): ${err.message}`);
-    renderReceipt(
-      "Unable to reach FastAPI server.",
-      [`API: ${API}`, "Start uvicorn to refresh store figures"],
-      err.message
-    );
+    setApiStatus("is-offline", "Offline");
+    showToast("err", `Can't reach the server at ${API}. Start uvicorn, then refresh. (${err.message})`);
+    renderReceipt("The server isn't responding.", [`API: ${API}`], err.message);
   }
 }
 
-// Navigation handlers
-document.querySelectorAll(".nav-item").forEach((btn) => {
-  btn.addEventListener("click", () => switchView(btn.dataset.view));
-});
+/* Navigation */
+document.querySelectorAll(".nav-item").forEach((b) => b.addEventListener("click", () => switchView(b.dataset.view)));
+document.querySelectorAll("[data-jump-view]").forEach((b) =>
+  b.addEventListener("click", (e) => { e.preventDefault(); switchView(b.dataset.jumpView); }));
 
-document.querySelectorAll("[data-jump-view]").forEach((btn) => {
-  btn.addEventListener("click", () => switchView(btn.dataset.jumpView));
-});
+/* Select <-> ID sync */
+function link(selectId, inputId) {
+  $(selectId).addEventListener("change", (e) => { if (e.target.value) $(inputId).value = e.target.value; });
+  $(inputId).addEventListener("input", (e) => {
+    const s = $(selectId);
+    s.value = Array.from(s.options).some((o) => o.value === e.target.value) ? e.target.value : "";
+  });
+}
+link("medicineSelect", "medicineId");
+link("batchSelect", "inBatchId");
 
-// Quick-pick select <-> numeric ID synchronization
-document.getElementById("medicineSelect").addEventListener("change", (e) => {
-  if (e.target.value) {
-    document.getElementById("medicineId").value = e.target.value;
-  }
-});
-
-document.getElementById("medicineId").addEventListener("input", (e) => {
-  const select = document.getElementById("medicineSelect");
-  const match = Array.from(select.options).some((opt) => opt.value === e.target.value);
-  select.value = match ? e.target.value : "";
-});
-
-document.getElementById("batchSelect").addEventListener("change", (e) => {
-  if (e.target.value) {
-    document.getElementById("inBatchId").value = e.target.value;
-  }
-});
-
-document.getElementById("inBatchId").addEventListener("input", (e) => {
-  const select = document.getElementById("batchSelect");
-  const match = Array.from(select.options).some((opt) => opt.value === e.target.value);
-  select.value = match ? e.target.value : "";
-});
-
-// Stock-Out (FEFO) submission
-document.getElementById("stockOutForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const medicine_id = Number(document.getElementById("medicineId").value);
-  const quantity = Number(document.getElementById("quantity").value);
-  const notes = document.getElementById("outNotes").value.trim();
-
+/* Dispense (FEFO) */
+$("stockOutForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const medicine_id = Number($("medicineId").value);
+  const quantity = Number($("quantity").value);
+  const notes = $("outNotes").value.trim();
   try {
     const body = { medicine_id, quantity };
     if (notes) body.notes = notes;
-
-    const data = await fetchJSON("/api/stock/out", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    const allocs = Array.isArray(data.allocations) ? data.allocations : [];
-    const chips = allocs.map(
-      (a) => `${a.batch_number} (Batch #${a.batch_id}): −${a.quantity_used} units (exp ${a.expiry_date})`
-    );
-
-    renderReceipt(
-      `Issued ${quantity} units of ${getMedicineName(medicine_id)} via FEFO.`,
-      chips.length ? chips : [`Requested: ${quantity} units`],
-      data
-    );
-    showToast("ok", `Dispensed ${quantity} units for ${getMedicineName(medicine_id)}.`);
-
-    document.getElementById("quantity").value = "";
-    document.getElementById("outNotes").value = "";
+    const data = await postJSON("/api/stock/out", body);
+    const chips = (Array.isArray(data.allocations) ? data.allocations : []).map(
+      (a) => `${a.batch_number} (Batch #${a.batch_id}): −${a.quantity_used} units, exp ${a.expiry_date}`);
+    renderReceipt(`Dispensed ${quantity} units of ${medName(medicine_id)}, oldest expiry first.`,
+      chips.length ? chips : [`Requested: ${quantity} units`], data);
+    showToast("ok", `Dispensed ${quantity} units of ${medName(medicine_id)}.`);
+    $("quantity").value = ""; $("outNotes").value = "";
     await syncWorkspace();
   } catch (err) {
-    renderReceipt("Stock-out could not be completed.", [`Error: ${err.message}`], err.message);
+    renderReceipt("Couldn't dispense that stock.", [err.message], err.message);
     showToast("err", err.message);
   }
 });
 
-// Stock-In submission
-document.getElementById("stockInForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const batch_id = Number(document.getElementById("inBatchId").value);
-  const quantity = Number(document.getElementById("inQuantity").value);
-  const notes = document.getElementById("inNotes").value.trim();
-
+/* Receive */
+$("stockInForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const batch_id = Number($("inBatchId").value);
+  const quantity = Number($("inQuantity").value);
+  const notes = $("inNotes").value.trim();
   try {
     const body = { batch_id, quantity };
     if (notes) body.notes = notes;
-
-    const data = await fetchJSON("/api/stock/in", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    renderReceipt(
-      `Received +${quantity} units into ${getBatchLabel(batch_id)}.`,
-      [`New Batch Stock: ${data.new_quantity ?? "updated"} units`, notes ? `Note: ${notes}` : "Logged as IN"],
-      data
-    );
-    showToast("ok", `Added +${quantity} units to Batch #${batch_id}.`);
-
-    document.getElementById("inQuantity").value = "";
-    document.getElementById("inNotes").value = "";
+    const data = await postJSON("/api/stock/in", body);
+    renderReceipt(`Received ${quantity} units into ${batchLabel(batch_id)}.`,
+      [`New batch total: ${data.new_quantity ?? "updated"} units`, notes ? `Note: ${notes}` : "Logged as In"], data);
+    showToast("ok", `Received ${quantity} units into Batch #${batch_id}.`);
+    $("inQuantity").value = ""; $("inNotes").value = "";
     await syncWorkspace();
   } catch (err) {
-    renderReceipt("Stock-in could not be completed.", [`Error: ${err.message}`], err.message);
+    renderReceipt("Couldn't receive that stock.", [err.message], err.message);
     showToast("err", err.message);
   }
 });
 
-document.getElementById("batchSearch").addEventListener("input", (e) => {
-  state.batchFilter = e.target.value;
-  renderBatchTable();
+$("batchSearch").addEventListener("input", (e) => { state.batchFilter = e.target.value; renderBatches(); });
+$("toggleRawBtn").addEventListener("click", () => {
+  const hidden = $("result").classList.toggle("hidden");
+  $("toggleRawBtn").textContent = hidden ? "Show API JSON" : "Hide API JSON";
 });
+$("refreshBtn").addEventListener("click", syncWorkspace);
 
-document.getElementById("toggleRawBtn").addEventListener("click", () => {
-  const pre = document.getElementById("result");
-  const isHidden = pre.classList.toggle("hidden");
-  document.getElementById("toggleRawBtn").textContent = isHidden ? "Show API JSON" : "Hide API JSON";
-});
-
-document.getElementById("refreshBtn").addEventListener("click", () => {
-  syncWorkspace();
-});
-
-document.getElementById("todayLabel").textContent =
-  `${VIEW_META.overview.eyebrow} • ${formatDateLabel()}`;
-
+$("todayLabel").textContent = fmtDate();
 syncWorkspace();
